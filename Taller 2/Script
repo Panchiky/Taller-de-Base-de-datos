@@ -1,0 +1,192 @@
+-- ==========================================================
+-- 1. TABLAS MAESTRAS / CATÁLOGOS INDEPENDIENTES
+-- ==========================================================
+
+CREATE TABLE regiones (
+    codigoregion INT NOT NULL,
+    region VARCHAR(255) NOT NULL,
+    CONSTRAINT PK_regiones PRIMARY KEY (codigoregion)
+);
+
+CREATE TABLE sexos (
+    cod_sexo INT NOT NULL,
+    sexo VARCHAR(50) NOT NULL,
+    CONSTRAINT PK_sexos PRIMARY KEY (cod_sexo)
+);
+
+CREATE TABLE tiposensenanza (
+    codigo_ens INT NOT NULL,
+    tipoensenanza VARCHAR(255) NOT NULL,
+    CONSTRAINT PK_tiposensenanza PRIMARY KEY (codigo_ens)
+);
+
+CREATE TABLE ramaseducacionales (
+    codigoramaeducacional CHAR(2) NOT NULL,
+    ramaeducacional VARCHAR(255) NOT NULL,
+    CONSTRAINT PK_ramaseducacionales PRIMARY KEY (codigoramaeducacional)
+);
+
+CREATE TABLE dependencias (
+    codigodependencia INT NOT NULL,
+    dependencia VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_dependencias PRIMARY KEY (codigodependencia)
+);
+
+CREATE TABLE rendicionespruebas (
+    idrendicionprueba INT NOT NULL AUTO_INCREMENT,
+    rendicionprueba VARCHAR(255) NOT NULL,
+    CONSTRAINT PK_rendicionespruebas PRIMARY KEY (idrendicionprueba)
+);
+
+CREATE TABLE pruebas (
+    idprueba INT NOT NULL AUTO_INCREMENT,
+    nombreprueba VARCHAR(255) NOT NULL,
+    CONSTRAINT PK_pruebas PRIMARY KEY (idprueba)
+);
+
+
+-- ==========================================================
+-- 2. JERARQUÍA GEOGRÁFICA
+-- ==========================================================
+
+CREATE TABLE provincias (
+    codigoprovincia INT NOT NULL,
+    provincias VARCHAR(255) NOT NULL,
+    codigoregion INT NOT NULL,
+    CONSTRAINT PK_provincias PRIMARY KEY (codigoprovincia),
+    CONSTRAINT FK_provincias_regiones FOREIGN KEY (codigoregion) 
+        REFERENCES regiones(codigoregion) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE comunas (
+    codigocomuna INT NOT NULL,
+    comunas VARCHAR(255) NOT NULL,
+    codigoprovincia INT NOT NULL,
+    CONSTRAINT PK_comunas PRIMARY KEY (codigocomuna),
+    CONSTRAINT FK_comunas_provincias FOREIGN KEY (codigoprovincia) 
+        REFERENCES provincias(codigoprovincia) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+
+-- ==========================================================
+-- 3. ESTABLECIMIENTOS Y OFERTA ACADÉMICA
+-- ==========================================================
+
+CREATE TABLE establecimientos (
+    rbd INT NOT NULL,
+    nombre_unidad_educativa VARCHAR(255) NOT NULL,
+    codigodependencia INT NOT NULL,
+    codigocomuna INT NOT NULL,
+    CONSTRAINT PK_establecimientos PRIMARY KEY (rbd),
+    CONSTRAINT FK_establecimientos_dependencias FOREIGN KEY (codigodependencia) 
+        REFERENCES dependencias(codigodependencia) 
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT FK_establecimientos_comunas FOREIGN KEY (codigocomuna) 
+        REFERENCES comunas(codigocomuna) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE tiposensenanza_establecimientos (
+    codigo_ens_tipoensenanza INT NOT NULL,
+    rbd_establecimientos INT NOT NULL,
+    codigoramaeducacional CHAR(2) NOT NULL,
+    CONSTRAINT PK_tiposensenanza_establecimientos 
+        PRIMARY KEY (codigo_ens_tipoensenanza, rbd_establecimientos, codigoramaeducacional),
+    CONSTRAINT FK_tipoens_est_tipoens FOREIGN KEY (codigo_ens_tipoensenanza) 
+        REFERENCES tiposensenanza(codigo_ens) 
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT FK_tipoens_est_est FOREIGN KEY (rbd_establecimientos) 
+        REFERENCES establecimientos(rbd) 
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT FK_tipoens_est_rama FOREIGN KEY (codigoramaeducacional) 
+        REFERENCES ramaseducacionales(codigoramaeducacional) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+
+-- ==========================================================
+-- 4. POSTULANTES
+-- ==========================================================
+
+CREATE TABLE postulantes (
+    mrut INT NOT NULL,
+    fecha_nacimiento DATE NOT NULL,
+    cod_sexo INT NOT NULL,
+    codigo_ens INT NOT NULL,
+    rbd_establecimientos INT NOT NULL,
+    codigoramaeducacional CHAR(2) NOT NULL,
+    anoegreso SMALLINT UNSIGNED NOT NULL,       -- Optimizado desde DATE (ej. 2023)
+    promedio DECIMAL(3, 2) NOT NULL,           -- Decimal exacto para notas (ej. 6.45)
+    ptjenem INT NOT NULL,
+    porc_sup_not INT NOT NULL,
+    ptjeranking INT NOT NULL,
+    CONSTRAINT PK_postulantes PRIMARY KEY (mrut),
+    CONSTRAINT FK_postulantes_sexos FOREIGN KEY (cod_sexo) 
+        REFERENCES sexos(cod_sexo) 
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT FK_postulantes_tipoens_est 
+        FOREIGN KEY (codigo_ens, rbd_establecimientos, codigoramaeducacional) 
+        REFERENCES tiposensenanza_establecimientos(codigo_ens_tipoensenanza, rbd_establecimientos, codigoramaeducacional) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+
+-- ==========================================================
+-- 5. RESULTADOS Y PUNTAJES (N:M)
+-- ==========================================================
+
+CREATE TABLE puntajesrendicionespruebasalumnos (
+    idrendicionprueba INT NOT NULL,
+    idprueba INT NOT NULL,
+    mrut INT NOT NULL,
+    f_prueba_reg_cl VARCHAR(20) NOT NULL,
+    forma SMALLINT NOT NULL,
+    puntaje INT NOT NULL,
+    correctas SMALLINT NOT NULL,
+    erradas SMALLINT NOT NULL,
+    omitidas SMALLINT NOT NULL,
+    CONSTRAINT PK_puntajesrendiciones 
+        PRIMARY KEY (idrendicionprueba, idprueba, mrut),
+    CONSTRAINT FK_puntajes_rendiciones FOREIGN KEY (idrendicionprueba) 
+        REFERENCES rendicionespruebas(idrendicionprueba) 
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT FK_puntajes_pruebas FOREIGN KEY (idprueba) 
+        REFERENCES pruebas(idprueba) 
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT FK_puntajes_postulantes FOREIGN KEY (mrut) 
+        REFERENCES postulantes(mrut) 
+        ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE puntajes_maximos (
+    mrut_postulantes INT NOT NULL,
+    idprueba_pruebas INT NOT NULL,
+    ptje_maximo INT NOT NULL,
+    CONSTRAINT PK_puntajes_maximos 
+        PRIMARY KEY (mrut_postulantes, idprueba_pruebas),
+    CONSTRAINT FK_maximos_postulantes FOREIGN KEY (mrut_postulantes) 
+        REFERENCES postulantes(mrut) 
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT FK_maximos_pruebas FOREIGN KEY (idprueba_pruebas) 
+        REFERENCES pruebas(idprueba) 
+        ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+
+-- ==========================================================
+-- 6. ÍNDICES DE RENDIMIENTO ADICIONALES
+-- ==========================================================
+
+-- Postulantes por colegio/rama
+CREATE INDEX idx_postulantes_establecimiento 
+    ON postulantes (rbd_establecimientos, codigo_ens);
+
+-- Agrupaciones geográficas de colegios
+CREATE INDEX idx_establecimientos_comuna 
+    ON establecimientos (codigocomuna, codigodependencia);
+
+-- Búsquedas directas por alumno en historial de puntajes
+CREATE INDEX idx_puntajes_mrut 
+    ON puntajesrendicionespruebasalumnos (mrut);
