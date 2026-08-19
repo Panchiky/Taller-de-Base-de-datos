@@ -1,3 +1,5 @@
+#CHECK - fueron agregados algunos
+
 CREATE TABLE REGIONES
 (
   codigoregion INT NOT NULL,
