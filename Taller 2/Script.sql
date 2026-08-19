@@ -1,4 +1,4 @@
-#CHECK - fueron agregados algunos
+-- CHECK - fueron agregados algunos
 
 CREATE TABLE REGIONES
 (
