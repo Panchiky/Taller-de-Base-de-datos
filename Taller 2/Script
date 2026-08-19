@@ -88,7 +88,7 @@ CREATE TABLE POSTULANTES
   promedio FLOAT NOT NULL CHECK (promedio >= 0 AND promedio <= 100), 
   ptjenem INT NOT NULL CHECK (ptjenem >= 0),
   porc_sup_not INT NOT NULL CHECK (porc_sup_not >= 0 AND porc_sup_not <= 100),
-  ptjeranking INT NOT NULL (ptjenem >= 0),
+  ptjeranking INT NOT NULL CHECK (ptjeranking >= 0),
   codigo_ens INT NOT NULL,
   codigoramaeducacional CHAR(2) NOT NULL,
   rbd INT NOT NULL,
