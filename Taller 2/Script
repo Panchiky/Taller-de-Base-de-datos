@@ -54,7 +54,7 @@ CREATE TABLE RENDICIONESPRUEBAS
 CREATE TABLE ESTABLECIMIENTOS
 (
   rbd INT NOT NULL,
-  nombre_unidad_educativa NVARCHAR(255) NOT NULL,
+  nombre_unidad_educativa VARCHAR(255) NOT NULL,
   codigocomuna INT NOT NULL,
   codigodependencias INT NOT NULL,
   PRIMARY KEY (rbd),
@@ -85,16 +85,16 @@ CREATE TABLE POSTULANTES
   mrut INT NOT NULL,
   fecha_nacimiento DATE NOT NULL,
   anoegreso DATE NOT NULL,
-  promedio FLOAT NOT NULL,
-  ptjenem INT NOT NULL,
-  porc_sup_not INT NOT NULL,
-  ptjeranking INT NOT NULL,
+  promedio FLOAT NOT NULL CHECK (promedio >= 0 AND promedio <= 100), 
+  ptjenem INT NOT NULL CHECK (ptjenem >= 0),
+  porc_sup_not INT NOT NULL CHECK (porc_sup_not >= 0 AND porc_sup_not <= 100),
+  ptjeranking INT NOT NULL (ptjenem >= 0),
   codigo_ens INT NOT NULL,
-  codigoramaeducacional INT NOT NULL,
+  codigoramaeducacional CHAR(2) NOT NULL,
   rbd INT NOT NULL,
   cod_sexo INT NOT NULL,
   PRIMARY KEY (mrut),
-  FOREIGN KEY (codigo_ens, codigoramaeducacional, rbd) REFERENCES TIPOSENSENANZA_ESTABLECIMIENTOS(, , ),
+  FOREIGN KEY (codigo_ens, codigoramaeducacional, rbd) REFERENCES TIPOSENSENANZA_ESTABLECIMIENTOS(codigo_ens, codigoramaeducacional, rbd),
   FOREIGN KEY (cod_sexo) REFERENCES SEXOS(cod_sexo)
 );
 
@@ -109,10 +109,10 @@ CREATE TABLE PUNTAJESRENDICIONESPRUEBASALUMNOS
 (
   f_prueba_reg_cl VARCHAR(255) NOT NULL,
   forma INT NOT NULL,
-  puntaje SMALLINT NOT NULL,
-  correctas SMALLINT NOT NULL,
-  erradas SMALLINT NOT NULL,
-  omitidas SMALLINT NOT NULL,
+  puntaje SMALLINT NOT NULL CHECK (puntaje >= 0),
+  correctas SMALLINT NOT NULL CHECK (correctas >= 0),
+  erradas SMALLINT NOT NULL CHECK (erradas >= 0),
+  omitidas SMALLINT NOT NULL CHECK (omitidas >= 0),
   idrencionpruebas INT NOT NULL,
   mrut INT NOT NULL,
   idpruebas INT NOT NULL,
@@ -124,7 +124,7 @@ CREATE TABLE PUNTAJESRENDICIONESPRUEBASALUMNOS
 
 CREATE TABLE PUNTAJES_MAXIMOS
 (
-  ptje_maximo INT NOT NULL,
+  ptje_maximo INT NOT NULL CHECK (ptje_maximo >= 0),
   idpruebas INT NOT NULL,
   mrut INT NOT NULL,
   PRIMARY KEY (idpruebas, mrut),
