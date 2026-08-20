@@ -94,7 +94,7 @@ CREATE TABLE PRUEBAS
 (
   idprueba SERIAL NOT NULL,
   nombreprueba VARCHAR(255) NOT NULL,
-  CONSTRAINT pk_puebas PRIMARY KEY (idprueba)
+  CONSTRAINT pk_pruebas PRIMARY KEY (idprueba)
 );
 CREATE TABLE PUNTAJESRENDICIONESPRUEBASALUMNOS
 (
@@ -110,7 +110,7 @@ CREATE TABLE PUNTAJESRENDICIONESPRUEBASALUMNOS
   CONSTRAINT pk_puntajes_rendiciones_pruebas_alumnos PRIMARY KEY (idrendicionprueba, mrut, idprueba),
   CONSTRAINT fk_puntajes_rendiciones FOREIGN KEY (idrendicionprueba) REFERENCES RENDICIONESPRUEBAS(idrendicionprueba),
   CONSTRAINT fk_puntajes_postulantes FOREIGN KEY (mrut) REFERENCES POSTULANTES(mrut),
-  CONSTRAINT fk_puntajes_pruebas FOREIGN KEY (idprueba) REFERENCES PRUEBAS(idprueba)
+  CONSTRAINT fk_puntajes_pruebas FOREIGN KEY (idprueba) REFERENCES PRUEBAS(idprueba),
   CONSTRAINT chk_puntajes_puntaje CHECK (puntaje >= 0),
   CONSTRAINT chk_puntajes_correctas CHECK (correctas >= 0),
   CONSTRAINT chk_puntajes_erradas CHECK (erradas >= 0),
