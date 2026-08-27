@@ -1,51 +1,30 @@
-----------------------------------------------------------------------------------
+-- =====================================================================
 -- ETL PAES 2026 - Carga de A_INSCRITOS_PUNTAJES_PAES_2026_PUB_MRUN.csv
--- Taller de Base de Datos - ETL (Copy, CAST, to_date, to_number, COALESCE)
-----------------------------------------------------------------------------------
--- IMPORTANTE - 3 errores en el script creacion de datos, ya se corregieron
--- en el CREATE TABLE de la Sección 0:
---   1) comunas: "UNIQUE (comunas)" referenciaba una columna que no
---      existe (la columna se llama "comuna", singular).
---   2) postulantes.promedio NUMERIC(1,2) no puede representar 1.0-7.0
---      (1 dígito de precisión total). Se usa NUMERIC(3,2).
---   3) postulantes.ptjenem CHECK (between 1 and 7) era el rango de
---      "promedio" (notas), no el de PTJE_NEM real (que es un puntaje
---      tipo 456-785, escala 100-1000). Se usa (between 100 and 1000).
---
--- La Sección 0 usa CREATE TABLE IF NOT EXISTS: si tu base ya tenía el
--- esquema (sin estas correcciones) desde antes, este bloque NO lo va a
--- modificar solo, porque las tablas ya existen. En ese caso, o bien
--- (a) partes de una base nueva/vacía y dejas que la Sección 0 cree todo
--- ya corregido, o (b) si ya cargaste el esquema original y tu profesor
--- exige el DDL literal, aplica manualmente los 3 ALTER TABLE
--- equivalentes antes de continuar.
---
--- VALIDACIÓN DEL ARCHIVO FUENTE (hecha antes de escribir este script):
---   - 320.087 filas de datos + 1 fila de encabezado, 131 columnas,
---     separador ';', codificación UTF-8, sin filas con número de
---     columnas distinto a 131 (no hay ';' sueltos dentro de texto).
---   - MRUN: 320.087 valores, todos únicos (no hay postulantes
---     duplicados).
---   - COD_SEXO: solo 1 y 2, sin blancos.
---   - PROMEDIO_NOTAS: rango 0,00 a 7,00, siempre con coma decimal
---     (nunca punto) y sin valores en blanco.
---   - PTJE_NEM y PTJE_RANKING: rango 0 a 1000, sin blancos.
---   - RBD y DEPENDENCIA: 3.200 filas vienen con ambos campos en blanco
---     (postulantes sin establecimiento de egreso informado).
---   - ANYO_DE_EGRESO: 218 filas en blanco + 1 fila en '0'.
---   - Hay 12 RBD que aparecen con más de una DEPENDENCIA informada y
---     11 RBD que aparecen con más de un NOMBRE_UNIDAD_EDUC (cambios de
---     nombre/dependencia del colegio entre años); ningún RBD aparece
---     con más de una comuna.
---   - Los códigos y nombres de región/provincia/comuna son 100%
---     consistentes entre filas (mismo código -> mismo nombre siempre).
+-- =====================================================================
+-- CSV validado: 320.087 filas, 131 columnas, separador ';', UTF-8,
+-- encabezado presente, sin filas truncadas. MRUN único en todas las
+-- filas. Inconsistencias detectadas y tratadas más abajo:
+--   - 3.200 filas con RBD/DEPENDENCIA en blanco (sin establecimiento)
+--   - 218 filas con ANYO_DE_EGRESO en blanco + 1 en '0'
+--   - 12 RBD con más de una DEPENDENCIA informada entre años
+--   - 11 RBD con más de un NOMBRE_UNIDAD_EDUC entre años
+--   - Región/provincia/comuna: código -> nombre 100% consistente
 -- =====================================================================
 
 
--- ------------------------------------------------------------------------
--- SECCIÓN 0: Esquema normalizado (script del profesor, con las 3
--- correcciones ya incorporadas directamente en el CREATE TABLE)
-------------------------------------------------------------------------
+-- =====================================================================
+-- SECCIÓN 0: Esquema (3 errores del script original corregidos aquí)
+-- =====================================================================
+--   1) comunas: "UNIQUE (comunas)" -> columna no existe, es "comuna".
+--   2) postulantes.promedio NUMERIC(1,2) no representa 1.0-7.0 -> NUMERIC(3,2).
+--   3) postulantes.ptjenem CHECK(1-7) era el rango de notas, no de
+--      PTJE_NEM real (100-1000).
+-- Además, los CHECK de promedio/ptjenem/ptjeranking se relajan a >= 0
+-- porque el CSV real trae ceros en esos campos.
+-- Usa CREATE TABLE IF NOT EXISTS: si tu base ya tenía las tablas
+-- creadas con el DDL ORIGINAL (sin estas correcciones), este bloque no
+-- las modifica solo -> ver Sección 0-BIS.
+
 CREATE TABLE IF NOT EXISTS sexos (
   cod_sexo INTEGER NOT NULL,
   sexo VARCHAR(255) NOT NULL,
@@ -57,9 +36,7 @@ CREATE TABLE IF NOT EXISTS postulantes (
   fecha_nacimiento DATE NOT NULL,
   cod_sexo INTEGER NOT NULL,
   anoegreso DATE NOT NULL,
-  -- Se ajusta el límite inferior a 0.0 para aceptar postulantes sin NEM en el CSV
   promedio NUMERIC(3,2) NOT NULL CHECK (promedio >= 0.0 and promedio <= 7.0),
-  -- Se ajusta el límite inferior a 0 para aceptar puntajes vacíos/cero en el CSV
   ptjenem INTEGER NOT NULL CHECK (ptjenem >= 0 and ptjenem <= 1000),
   porc_sup_not INTEGER NOT NULL,
   ptjeranking INTEGER NOT NULL CHECK (ptjeranking >= 0 and ptjeranking <= 1000),
@@ -107,9 +84,7 @@ CREATE TABLE IF NOT EXISTS comunas (
   comuna VARCHAR(30) NOT NULL,
   codigoprovincia INTEGER NOT NULL,
   PRIMARY KEY (codigocomuna),
-  -- Corrección: el script original tenía "UNIQUE (comunas)", una
-  -- columna que no existe (la columna se llama "comuna", singular).
-  UNIQUE (comuna),
+  UNIQUE (comuna), -- corregido: columna es "comuna", no "comunas"
   FOREIGN KEY (codigoprovincia) REFERENCES provincias(codigoprovincia) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -170,9 +145,41 @@ CREATE TABLE IF NOT EXISTS puntajes_maximos (
 );
 
 
-------------------------------------------------------------------------
+-- =====================================================================
+-- SECCIÓN 0-BIS: ALTER TABLE de respaldo
+-- =====================================================================
+-- Solo necesario si "postulantes" ya existía con el DDL ORIGINAL (sin
+-- corregir). Idempotente, no daña nada si ya está corregida.
+-- Asume nombres de constraint por defecto de Postgres
+-- (tabla_columna_check); si difieren, revisar con \d postulantes.
+-- No incluye nada para "comunas": ese error impide crear la tabla
+-- (columna inexistente), así que si existe ya está bien.
+
+ALTER TABLE postulantes
+  ALTER COLUMN promedio TYPE NUMERIC(3,2);
+
+ALTER TABLE postulantes
+  DROP CONSTRAINT IF EXISTS postulantes_promedio_check;
+ALTER TABLE postulantes
+  ADD CONSTRAINT postulantes_promedio_check CHECK (promedio >= 0.0 AND promedio <= 7.0);
+
+ALTER TABLE postulantes
+  DROP CONSTRAINT IF EXISTS postulantes_ptjenem_check;
+ALTER TABLE postulantes
+  ADD CONSTRAINT postulantes_ptjenem_check CHECK (ptjenem >= 0 AND ptjenem <= 1000);
+
+ALTER TABLE postulantes
+  DROP CONSTRAINT IF EXISTS postulantes_ptjeranking_check;
+ALTER TABLE postulantes
+  ADD CONSTRAINT postulantes_ptjeranking_check CHECK (ptjeranking >= 0 AND ptjeranking <= 1000);
+
+
+-- =====================================================================
 -- SECCIÓN 1: Tabla temporal (staging) "traspaso"
-------------------------------------------------------------------------
+-- =====================================================================
+-- DDL del profesor sin modificar: 131 columnas, mismo orden que el
+-- header del CSV (la carga en Sección 2 es posicional).
+
 DROP TABLE IF EXISTS public.traspaso;
 
 CREATE TABLE public.traspaso
@@ -314,20 +321,11 @@ CREATE TABLE public.traspaso
 -- =====================================================================
 -- SECCIÓN 2: Carga masiva con COPY
 -- =====================================================================
--- El CSV real (A_INSCRITOS_PUNTAJES_PAES_2026_PUB_MRUN.csv) trae:
---   - separador ';' (no coma)
---   - fila de encabezado
---   - codificación UTF-8
---   - 320.087 filas de datos, 131 columnas cada una, sin filas
---     truncadas ni ';' sueltos dentro de campos de texto.
--- Por eso el COPY necesita indicar explícitamente DELIMITER, HEADER y
--- ENCODING; con los valores por defecto (coma, sin salto de header)
--- la carga fallaría o quedaría corrupta.
+-- CSV real usa ';' como separador (no coma) y trae encabezado -> hay
+-- que indicarlo explícito o la carga falla / queda corrupta.
+-- Ajusta la ruta al archivo.
 
--- Ajusta la ruta al archivo real en tu equipo/servidor.
-
--- Si el archivo está en el SERVIDOR de Postgres (o accesible por su
--- proceso), usa COPY:
+-- Si el archivo está en el SERVIDOR de Postgres:
 COPY public.traspaso
 FROM 'C:/ruta/a/A_INSCRITOS_PUNTAJES_PAES_2026_PUB_MRUN.csv'
 WITH (
@@ -337,26 +335,19 @@ WITH (
     ENCODING 'UTF8'
 );
 
--- Si usas psql y el archivo está en tu máquina CLIENTE (lo más común,
--- por ejemplo abriendo el archivo desde tu propio computador), comenta
--- el COPY de arriba y usa \copy en su lugar (metacomando de psql, va
--- sin punto y coma extra al final de la línea de opciones):
+-- Si usas psql y el archivo está en tu máquina CLIENTE, usa \copy
+-- (metacomando de psql, sin ";" extra al final):
 -- \copy public.traspaso FROM 'C:/ruta/a/A_INSCRITOS_PUNTAJES_PAES_2026_PUB_MRUN.csv' WITH (FORMAT csv, DELIMITER ';', HEADER true, ENCODING 'UTF8')
 
--- Si usas pgAdmin, usa el asistente gráfico "Import/Export Data..."
--- sobre la tabla traspaso, indicando ';' como delimitador y "Header"
--- activado, en vez de este COPY.
+-- Si usas pgAdmin: asistente "Import/Export Data..." con ';' como
+-- delimitador y Header activado, en vez de este COPY.
 
--- Validación rápida post-carga (debe dar 320087 en un archivo íntegro)
-SELECT count(*) FROM traspaso;
+SELECT count(*) FROM traspaso; -- debe dar 320087
 
 
 -- =====================================================================
--- SECCIÓN 3: Tablas de catálogo "en duro"
+-- SECCIÓN 3: Tablas de catálogo "en duro" (Anexo I y II del diccionario)
 -- =====================================================================
--- Estas tablas no tienen sus descripciones en el CSV (solo el código),
--- así que se llenan a mano con el Anexo I y Anexo II del diccionario
--- de datos.
 
 -- 3.1 sexos
 INSERT INTO sexos (cod_sexo, sexo) VALUES
@@ -364,7 +355,7 @@ INSERT INTO sexos (cod_sexo, sexo) VALUES
   (2, 'Femenino')
 ON CONFLICT (cod_sexo) DO NOTHING;
 
--- 3.2 ramaseducacionales (valores reales presentes en el CSV: H1-H4, T1-T5)
+-- 3.2 ramaseducacionales (valores presentes en el CSV: H1-H4, T1-T5)
 INSERT INTO ramaseducacionales (codigoramaeducacional, ramaeducacional) VALUES
   ('H1', 'Humanista Científico Diurno'),
   ('H2', 'Humanista Científico Nocturno'),
@@ -387,13 +378,9 @@ INSERT INTO dependencias (codigodependencia, dependencia) VALUES
   (6, 'Servicio Local de Educación (SLE)')
 ON CONFLICT (codigodependencia) DO NOTHING;
 
--- 3.4 tiposensenanza (Anexo II completo; el CSV 2026 solo usa un
--- subconjunto, pero se carga completo por si se reutiliza el script
--- con otros años del mismo proceso).
--- Nota: el propio Anexo II repite el mismo texto de glosa para 4 pares
--- de códigos (460/461, 560/561, 660/661, 760/761). Como tipoensenanza
--- tiene UNIQUE, se agrega el código entre paréntesis solo a esas 8
--- filas para diferenciarlas; el código real no cambia.
+-- 3.4 tiposensenanza (Anexo II completo; el CSV 2026 usa un subconjunto).
+-- Nota: 4 pares de códigos comparten glosa (460/461, 560/561, 660/661,
+-- 760/761); se agrega el código entre paréntesis para no violar UNIQUE.
 INSERT INTO tiposensenanza (codigo_ens, tipoensenanza) VALUES
   (310, 'Enseñanza Media H-C niños y jóvenes'),
   (360, 'Educación Media H-C adultos vespertino y nocturno (Decreto N° 190/1975)'),
@@ -423,24 +410,18 @@ INSERT INTO tiposensenanza (codigo_ens, tipoensenanza) VALUES
   (963, 'Enseñanza Media Artística Adultos')
 ON CONFLICT (codigo_ens) DO NOTHING;
 
--- 3.5 rendicionespruebas (las 4 instancias de rendición que existen
--- en el archivo: actual/anterior x regular/invierno)
+-- 3.5 rendicionespruebas (4 instancias: actual/anterior x regular/invierno)
 INSERT INTO rendicionespruebas (rendicionprueba) VALUES
   ('Regular Proceso Actual'),
   ('Invierno Proceso Actual'),
   ('Regular Proceso Anterior'),
   ('Invierno Proceso Anterior');
 
--- 3.6 pruebas
--- Las 4 primeras (CL, M1, M2, HCS) tienen puntaje + detalle
--- (forma/correctas/erradas/omitidas) en las 4 rendiciones.
--- Las 4 siguientes (CBIO/CFIS/CQUI/CTP) son las electivas de Ciencias:
--- solo tienen detalle completo en el proceso ACTUAL (columnas
--- PRUEBA_REG_CBIO...PRUEBA_INV_CTP); el puntaje de esa electiva se
--- toma de CIEN_REG_ACTUAL / CIEN_INV_ACTUAL.
--- La 9na fila es un "cajón" para el puntaje de Ciencias del proceso
--- ANTERIOR, donde el CSV no informa cuál electiva rindió el postulante
--- (no hay columnas de detalle para el proceso anterior).
+-- 3.6 pruebas. CL/M1/M2/HCS: puntaje + detalle en las 4 rendiciones.
+-- CBIO/CFIS/CQUI/CTP: electivas de Ciencias, detalle solo en el
+-- proceso ACTUAL (puntaje sale de CIEN_REG/INV_ACTUAL). La 9na fila es
+-- un "cajón" para Ciencias del proceso ANTERIOR, donde el CSV no
+-- identifica qué electivo rindió el postulante.
 INSERT INTO pruebas (nombreprueba) VALUES
   ('Competencia Lectora'),
   ('Competencia Matemática 1'),
@@ -456,10 +437,8 @@ INSERT INTO pruebas (nombreprueba) VALUES
 -- =====================================================================
 -- SECCIÓN 4: regiones / provincias / comunas
 -- =====================================================================
--- A diferencia de las tablas anteriores, estos nombres SÍ vienen en el
--- CSV y son consistentes (se verificó: 0 códigos con nombres distintos
--- entre filas), así que se derivan directamente de traspaso en vez de
--- tipearlos a mano desde el Anexo I.
+-- Se derivan directamente del CSV (no del Anexo I): se verificó que
+-- cada código tiene siempre el mismo nombre en las 320.087 filas.
 
 INSERT INTO regiones (codigoregion, region)
 SELECT DISTINCT
@@ -491,16 +470,12 @@ ON CONFLICT (codigocomuna) DO NOTHING;
 
 
 -- =====================================================================
--- SECCIÓN 5: establecimientos (con manejo de inconsistencias)
+-- SECCIÓN 5: establecimientos
 -- =====================================================================
--- Se detectaron 11 RBD con más de un (nombre_unidad_educ, comuna)
--- distinto entre filas (ej: cambio de nombre del colegio o de
--- dependencia a través de los años) y 12 RBD con más de una
--- dependencia informada. Como establecimientos.rbd es PK, no se puede
--- guardar más de una fila por RBD: se elige la versión más reciente
--- según anyo_de_egreso (DISTINCT ON ... ORDER BY ... DESC).
--- Además, 3.200 filas vienen con RBD en blanco (postulantes sin
--- establecimiento de egreso registrado): se excluyen de esta tabla.
+-- 11 RBD tienen más de un nombre/comuna informado entre años y 12 más
+-- de una dependencia (cambios en el tiempo). Como rbd es PK, se toma
+-- la versión más reciente según ANYO_DE_EGRESO (DISTINCT ON ... ORDER
+-- BY ... DESC). Las 3.200 filas con RBD en blanco se excluyen.
 
 INSERT INTO establecimientos (rbd, nombre_unidad_educativa, codigodependencia, codigocomuna)
 SELECT DISTINCT ON (CAST(rbd AS INTEGER))
@@ -533,15 +508,11 @@ ON CONFLICT (codigo_ens_tiposensenanza, rbd_establecimientos, codigoramaeducacio
 -- =====================================================================
 -- SECCIÓN 6: postulantes
 -- =====================================================================
--- Transformaciones usadas:
---  - FECHA_NACIMIENTO viene como AAAAMM (sin día, según diccionario):
---    se completa con día 01 y se convierte con to_date(...,'YYYYMMDD').
---  - PROMEDIO_NOTAS viene con coma decimal ("6,25"): se reemplaza la
---    coma por punto y se hace CAST a NUMERIC.
---  - ANYO_DE_EGRESO viene vacío en 218 filas (y en '0' en 1 fila): se
---    usa COALESCE/CASE con ANYO_PROCESO - 1 como respaldo razonable
---    (el año de egreso más probable si el dato no fue informado), para
---    no violar el NOT NULL.
+-- FECHA_NACIMIENTO viene AAAAMM -> se completa con día 01.
+-- PROMEDIO_NOTAS viene con coma decimal ("6,25") -> se reemplaza por punto.
+-- ANYO_DE_EGRESO vacío (218 filas) o '0' (1 fila) -> se usa
+-- ANYO_PROCESO - 1 como respaldo (supuesto: año de egreso más
+-- probable si no fue informado).
 
 INSERT INTO postulantes
   (mrut, fecha_nacimiento, cod_sexo, anoegreso, promedio, ptjenem, porc_sup_not, ptjeranking)
@@ -549,8 +520,6 @@ SELECT
   CAST(mrun AS INTEGER),
   to_date(fecha_nacimiento || '01', 'YYYYMMDD'),
   CAST(cod_sexo AS INTEGER),
-
-  -- LIMPIEZA: Si el año viene nulo o en '0', usamos el año del proceso menos 1
   to_date(
     CASE
       WHEN anyo_de_egreso IS NULL OR TRIM(anyo_de_egreso) = '' OR TRIM(anyo_de_egreso) = '0'
@@ -559,7 +528,6 @@ SELECT
     END || '0101',
     'YYYYMMDD'
   ),
-
   CAST(REPLACE(promedio_notas, ',', '.') AS NUMERIC(3,2)),
   CAST(ptje_nem AS INTEGER),
   CAST(porc_sup_notas AS INTEGER),
@@ -571,19 +539,11 @@ ON CONFLICT (mrut) DO NOTHING;
 -- =====================================================================
 -- SECCIÓN 7: puntajesrendicionespruebasalumnos
 -- =====================================================================
--- Se arma con UNION ALL: una rama por (rendición x prueba). Solo se
--- inserta la fila si el puntaje es válido (100-1000): así se descartan
--- pruebas no rendidas (puntaje en blanco o 0).
---
--- Regular/Invierno ACTUAL: el detalle (forma/correctas/erradas/
--- omitidas) SÍ está en el CSV para CL, M1, M2, HCS y para las 4
--- electivas de ciencia (CBIO/CFIS/CQUI/CTP); se usa tal cual.
---
--- Regular/Invierno ANTERIOR: el CSV NO trae detalle (no hay columnas
--- FORMA_REG_CL del proceso anterior). Siguiendo la lógica de COALESCE
--- vista en el taller, se completa forma/correctas/erradas/omitidas con
--- 0 como valor por defecto, dejando registro del puntaje aunque no se
--- conozca el detalle de respuestas.
+-- Una rama UNION ALL por (rendición x prueba); solo se inserta si el
+-- puntaje es válido (100-1000), descartando pruebas no rendidas.
+-- Actual: el CSV trae detalle (forma/correctas/erradas/omitidas) para
+-- las 4 pruebas base y las 4 electivas de ciencia.
+-- Anterior: el CSV NO trae detalle -> se completa con 0 por defecto.
 
 WITH ids AS (
   SELECT
@@ -603,7 +563,7 @@ WITH ids AS (
 ),
 carga AS (
 
-  -- ===== REGULAR ACTUAL =====
+  -- REGULAR ACTUAL
   SELECT ids.r_reg_act AS idrendicionprueba, ids.p_cl AS idprueba, CAST(t.mrun AS INTEGER) AS mrut,
          CAST(t.forma_reg_cl AS INTEGER) AS forma, CAST(t.clec_reg_actual AS INTEGER) AS puntaje,
          CAST(t.correctas_reg_cl AS SMALLINT) AS correctas, CAST(t.erradas_reg_cl AS SMALLINT) AS erradas, CAST(t.omitidas_reg_cl AS SMALLINT) AS omitidas
@@ -627,7 +587,7 @@ carga AS (
          CAST(t.correctas_reg_hcs AS SMALLINT), CAST(t.erradas_reg_hcs AS SMALLINT), CAST(t.omitidas_reg_hcs AS SMALLINT)
   FROM traspaso t, ids WHERE NULLIF(TRIM(t.hcsoc_reg_actual),'') IS NOT NULL AND CAST(t.hcsoc_reg_actual AS INTEGER) BETWEEN 100 AND 1000
 
-  -- ciencias regular actual: una fila por electivo, solo si ese electivo fue rendido (forma <> 0)
+  -- ciencias regular actual: una fila por electivo, solo si fue rendido (forma <> 0)
   UNION ALL
   SELECT ids.r_reg_act, ids.p_cbio, CAST(t.mrun AS INTEGER),
          CAST(t.forma_reg_cbio AS INTEGER), CAST(t.cien_reg_actual AS INTEGER),
@@ -652,7 +612,7 @@ carga AS (
          CAST(t.correctas_reg_ctp AS SMALLINT), CAST(t.erradas_reg_ctp AS SMALLINT), CAST(t.omitidas_reg_ctp AS SMALLINT)
   FROM traspaso t, ids WHERE CAST(t.forma_reg_ctp AS INTEGER) <> 0 AND NULLIF(TRIM(t.cien_reg_actual),'') IS NOT NULL AND CAST(t.cien_reg_actual AS INTEGER) BETWEEN 100 AND 1000
 
-  -- ===== INVIERNO ACTUAL =====
+  -- INVIERNO ACTUAL
   UNION ALL
   SELECT ids.r_inv_act, ids.p_cl, CAST(t.mrun AS INTEGER),
          CAST(t.forma_inv_cl AS INTEGER), CAST(t.clec_inv_actual AS INTEGER),
@@ -701,7 +661,7 @@ carga AS (
          CAST(t.correctas_inv_ctp AS SMALLINT), CAST(t.erradas_inv_ctp AS SMALLINT), CAST(t.omitidas_inv_ctp AS SMALLINT)
   FROM traspaso t, ids WHERE CAST(t.forma_inv_ctp AS INTEGER) <> 0 AND NULLIF(TRIM(t.cien_inv_actual),'') IS NOT NULL AND CAST(t.cien_inv_actual AS INTEGER) BETWEEN 100 AND 1000
 
-  -- ===== REGULAR ANTERIOR (sin detalle en la fuente -> valor por defecto 0) =====
+  -- REGULAR ANTERIOR (sin detalle en la fuente -> valor por defecto 0)
   UNION ALL
   SELECT ids.r_reg_ant, ids.p_cl, CAST(t.mrun AS INTEGER),
          0, CAST(t.clec_reg_anterior AS INTEGER), 0, 0, 0
@@ -727,7 +687,7 @@ carga AS (
          0, CAST(t.cien_reg_anterior AS INTEGER), 0, 0, 0
   FROM traspaso t, ids WHERE NULLIF(TRIM(t.cien_reg_anterior),'') IS NOT NULL AND CAST(t.cien_reg_anterior AS INTEGER) BETWEEN 100 AND 1000
 
-  -- ===== INVIERNO ANTERIOR (sin detalle en la fuente -> valor por defecto 0) =====
+  -- INVIERNO ANTERIOR (sin detalle en la fuente -> valor por defecto 0)
   UNION ALL
   SELECT ids.r_inv_ant, ids.p_cl, CAST(t.mrun AS INTEGER),
          0, CAST(t.clec_inv_anterior AS INTEGER), 0, 0, 0
@@ -765,10 +725,9 @@ ON CONFLICT (idrendicionprueba, idprueba, mrut) DO NOTHING;
 -- =====================================================================
 -- SECCIÓN 8: puntajes_maximos
 -- =====================================================================
--- CLEC_MAX / MATE1_MAX / MATE2_MAX / HCSOC_MAX / CIEN_MAX: el máximo
--- puntaje de cada prueba entre todas las rendiciones. Se usa la misma
--- clasificación de 4 pruebas + "Ciencias (proceso anterior...)" para
--- CIEN_MAX, ya que aquí tampoco se identifica el electivo.
+-- Máximo puntaje de cada prueba entre todas las rendiciones. CIEN_MAX
+-- se asigna al "cajón" de Ciencias del proceso anterior (mismo motivo
+-- que en la Sección 7: no se identifica el electivo).
 
 WITH ids AS (
   SELECT
@@ -808,10 +767,9 @@ ON CONFLICT (mrut_postulantes, idprueba_pruebas) DO NOTHING;
 -- =====================================================================
 -- SECCIÓN 9: Validaciones finales
 -- =====================================================================
--- Conteos por tabla: traspaso debe dar 320087; postulantes también
--- debería quedar en 320087 (ningún mrun es NULL/duplicado); las demás
--- deberían quedar acotadas por el número de valores distintos reales
--- (ej: regiones = 16, dependencias = 6, sexos = 2).
+-- traspaso y postulantes deberían dar 320087; las demás quedan
+-- acotadas por el número de valores distintos reales (ej: regiones =
+-- 16, dependencias = 6, sexos = 2).
 
 SELECT 'traspaso' AS tabla, count(*) AS filas FROM traspaso
 UNION ALL SELECT 'postulantes', count(*) FROM postulantes
@@ -829,18 +787,13 @@ UNION ALL SELECT 'pruebas', count(*) FROM pruebas
 UNION ALL SELECT 'puntajesrendicionespruebasalumnos', count(*) FROM puntajesrendicionespruebasalumnos
 UNION ALL SELECT 'puntajes_maximos', count(*) FROM puntajes_maximos;
 
--- Chequeos de calidad adicionales, útiles para justificar el manejo
--- de inconsistencias en el informe:
-
--- (a) Postulantes sin establecimiento informado (RBD vacío en el CSV):
---     deben ser 3.200 y no deben tener fila en tiposensenanza_establecimientos.
+-- (a) Postulantes sin RBD informado (debe dar 3.200)
 SELECT count(*) AS postulantes_sin_rbd
 FROM traspaso
 WHERE NULLIF(TRIM(rbd), '') IS NULL;
 
--- (b) RBD con más de un nombre/dependencia distinto en el CSV
---     (para documentar en el informe cómo se resolvió: se tomó el
---     registro con el ANYO_DE_EGRESO más reciente).
+-- (b) RBD con más de un nombre/dependencia distinto (para el informe:
+-- se resolvió tomando el registro con ANYO_DE_EGRESO más reciente)
 SELECT rbd, count(DISTINCT TRIM(nombre_unidad_educ)) AS nombres_distintos,
        count(DISTINCT NULLIF(TRIM(dependencia), '')) AS dependencias_distintas
 FROM traspaso
